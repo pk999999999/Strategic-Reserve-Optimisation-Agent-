@@ -1,17 +1,4 @@
-// Procurement View — the Adaptive Procurement Recommendation module
-// (Requirements 8.4, 8.5).
-//
-// On mount it requests ranked procurement options (`POST /procurement/recommend`)
-// and renders them as ranked cards ordered highest-to-lowest by
-// recommendation_score (R8.4). For each recommended option it shows the spot
-// price, tanker availability, port congestion, refinery grade compatibility, and
-// a plain-language rationale (R8.5). The top-ranked option (#1) is visually
-// highlighted. A "Refresh recommendations" control re-runs the recommender.
-//
-// Self-contained: all data fetching and local state live here via
-// useState/useEffect, mirroring the sibling module views.
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { RefreshCw, Ship, ShoppingCart } from "lucide-react";
 import { recommendProcurement, ApiError } from "../api";
@@ -19,16 +6,10 @@ import { Panel, LoadingIndicator, ErrorMessage } from "../components";
 import { formatUsd, formatFraction, formatScore } from "../lib";
 import type { ProcurementOption } from "../types";
 
-/**
- * Order options highest-to-lowest by recommendation_score (R8.4). The backend
- * already returns them ranked, but we sort defensively so render order always
- * reflects the score regardless of transport quirks.
- */
 function rankByScore(options: ProcurementOption[]): ProcurementOption[] {
   return [...options].sort((a, b) => b.recommendation_score - a.recommendation_score);
 }
 
-/** A single attribute cell (label + formatted value) inside an option card. */
 function Attribute({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -38,11 +19,6 @@ function Attribute({ label, value }: { label: string; value: string }) {
   );
 }
 
-/**
- * An attribute with a slim colored progress bar beneath the value. `fraction`
- * (0..1) drives the bar width; `tone` picks the fill color. Purely visual — the
- * underlying values are unchanged.
- */
 function AttributeBar({
   label,
   value,
@@ -72,7 +48,6 @@ function AttributeBar({
   );
 }
 
-/** Radial score ring (SVG circular progress) showing recommendation_score/100. */
 function RadialScore({ score }: { score: number }) {
   const radius = 26;
   const circumference = 2 * Math.PI * radius;
@@ -122,7 +97,6 @@ const cardItem = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.22, 1, 0.36, 1] } },
 };
 
-/** One ranked procurement option row (R8.5); #1 gets a left accent bar. */
 function OptionCard({ option, rank }: { option: ProcurementOption; rank: number }) {
   const isTop = rank === 1;
 
@@ -148,7 +122,7 @@ function OptionCard({ option, rank }: { option: ProcurementOption; rank: number 
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold text-slate-900">
               {option.supplier_country}
-              <span className="ml-1.5 text-slate-500">· {option.crude_grade}</span>
+              <span className="ml-1.5 text-slate-500">Â· {option.crude_grade}</span>
               {isTop && (
                 <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                   Top pick
@@ -207,14 +181,12 @@ function OptionCard({ option, rank }: { option: ProcurementOption; rank: number 
   );
 }
 
-/** The Adaptive Procurement Recommendation module. */
 export function ProcurementView() {
   const [options, setOptions] = useState<ProcurementOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  /** Request ranked procurement options (R8.4, R8.5). */
-  const loadRecommendations = useCallback(async () => {
+const loadRecommendations = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -246,7 +218,7 @@ export function ProcurementView() {
         className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
         aria-hidden
       />
-      {loading ? "Refreshing…" : "Refresh recommendations"}
+      {loading ? "Refreshingâ€¦" : "Refresh recommendations"}
     </button>
   );
 
@@ -262,7 +234,7 @@ export function ProcurementView() {
       bodyClassName="space-y-4"
     >
       {loading ? (
-        <LoadingIndicator label="Ranking procurement options…" fullHeight />
+        <LoadingIndicator label="Ranking procurement optionsâ€¦" fullHeight />
       ) : error ? (
         <ErrorMessage
           module="procurement"

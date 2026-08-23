@@ -1,11 +1,4 @@
-// Stepper — animated horizontal pipeline progress (Requirements 9.1, 9.2).
-//
-// Shows the four end-to-end pipeline stages (Ingest -> Score -> Simulate ->
-// Recommend) with a per-stage state (pending / active / done / error) and an
-// optional latency readout slot. Framer Motion animates state transitions.
-// Presentational: stage states and the latency value are supplied by the caller.
-
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { Check, Loader2, X } from "lucide-react";
 import { formatLatencyMs } from "../lib";
 
@@ -15,18 +8,17 @@ export interface Step {
   key: string;
   label: string;
   state: StepState;
-  /** Optional short per-stage detail (e.g. "12 signals"). */
+  
   detail?: string;
 }
 
 export interface StepperProps {
   steps: Step[];
-  /** Pipeline_Latency in ms; rendered in the readout slot when provided (R9.2). */
+  
   latencyMs?: number;
   className?: string;
 }
 
-/** The canonical pipeline stages in order. Callers can start from this. */
 export const DEFAULT_PIPELINE_STEPS: Step[] = [
   { key: "ingest", label: "Ingest", state: "pending" },
   { key: "score", label: "Score", state: "pending" },
@@ -69,7 +61,6 @@ function StepNode({ state, index }: { state: StepState; index: number }) {
   );
 }
 
-/** Animated horizontal stepper with a latency readout slot. */
 export function Stepper({ steps, latencyMs, className }: StepperProps) {
   return (
     <div className={className}>

@@ -1,21 +1,4 @@
-// Pipeline Runner View — the Signal-to-Recommendation Pipeline module
-// (Requirements 9.1, 9.2, 9.3, 10.5).
-//
-// A one-click control triggers the end-to-end backend run (`POST /pipeline/run`)
-// with an optional scenario id (R9.1). While the single request is in flight the
-// four canonical stages (Ingest -> Score -> Simulate -> Recommend) are advanced
-// optimistically through the animated Stepper (pending -> active -> done); on
-// success every stage is marked done and a compact per-stage result summary is
-// shown, on failure the attributable stage is marked errored (R10.5). A
-// prominent `Pipeline_Latency` readout is rendered from `result.latency_ms`
-// (R9.2), and the cross-module `linked_actions` surfaced for any high-band
-// corridor are listed with their recommended scenario and procurement option
-// (R9.3).
-//
-// Self-contained: all data fetching and local state live here, mirroring the
-// sibling module views.
-
-import { useCallback, useRef, useState } from "react";
+﻿import { useCallback, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, Link2, Play, Timer, Workflow } from "lucide-react";
 import { runPipeline, ApiError } from "../api";
 import {
@@ -28,10 +11,6 @@ import {
 import { formatLatencyMs, formatScore } from "../lib";
 import type { PipelineResult, RiskScore } from "../types";
 
-/**
- * Shape of a `linked_actions` entry (backend returns `list[dict]`). Mirrors the
- * dict built by the Pipeline Orchestrator for each high-band corridor (R9.3).
- */
 interface LinkedAction {
   corridor?: string;
   risk_score?: number;
@@ -39,14 +18,8 @@ interface LinkedAction {
   recommended_option_id?: string | null;
 }
 
-/** Ordered stage keys matching `DEFAULT_PIPELINE_STEPS`. */
 const STAGE_KEYS = ["ingest", "score", "simulate", "recommend"] as const;
 
-/**
- * Map a backend error `module` to the pipeline stage it belongs to so a failed
- * run can highlight the offending stage. Returns `null` when the module cannot
- * be attributed to a specific stage (e.g. a network failure).
- */
 function moduleToStageIndex(module: string): number | null {
   switch (module) {
     case "ingestion":
@@ -66,12 +39,10 @@ function moduleToStageIndex(module: string): number | null {
   }
 }
 
-/** A fresh set of steps with every stage pending. */
 function pendingSteps(): Step[] {
   return DEFAULT_PIPELINE_STEPS.map((s) => ({ ...s, state: "pending", detail: undefined }));
 }
 
-/** Build the per-stage result details shown on the stepper after a run (R9.1). */
 function successSteps(result: PipelineResult): Step[] {
   const topRisk = highestRisk(result.risk_scores);
   const topRec = result.recommendations[0];
@@ -88,18 +59,15 @@ function successSteps(result: PipelineResult): Step[] {
   }));
 }
 
-/** Highest-scoring risk target, or null when there are none. */
 function highestRisk(scores: RiskScore[]): RiskScore | null {
   if (scores.length === 0) return null;
   return [...scores].sort((a, b) => b.score - a.score)[0];
 }
 
-/** Read the `linked_actions` records as typed LinkedAction entries. */
 function toLinkedActions(records: Record<string, unknown>[]): LinkedAction[] {
   return records as LinkedAction[];
 }
 
-/** The Signal-to-Recommendation Pipeline runner. */
 export function PipelineRunnerView() {
   const [steps, setSteps] = useState<Step[]>(pendingSteps);
   const [running, setRunning] = useState(false);
@@ -107,8 +75,6 @@ export function PipelineRunnerView() {
   const [error, setError] = useState<{ message: string; stage: string | null } | null>(null);
   const [scenarioId, setScenarioId] = useState("");
 
-  // Tracks which stage the optimistic animation currently marks "active" so a
-  // failure with an unattributable module still errors a sensible stage.
   const activeIndexRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -119,16 +85,12 @@ export function PipelineRunnerView() {
     }
   }, []);
 
-  /** Trigger the end-to-end pipeline run and animate the stepper (R9.1, R9.2). */
-  const handleRun = useCallback(async () => {
+const handleRun = useCallback(async () => {
     if (running) return;
     setRunning(true);
     setError(null);
     setResult(null);
 
-    // Optimistically drive the stepper: the first stage goes active immediately,
-    // then each subsequent stage lights up on a short interval while the single
-    // request is in flight. Completed stages fill in green (R9.1).
     activeIndexRef.current = 0;
     setSteps(
       pendingSteps().map((s, i) => (i === 0 ? { ...s, state: "active" } : s)),
@@ -187,7 +149,7 @@ export function PipelineRunnerView() {
       className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
     >
       <Play className="h-3.5 w-3.5" aria-hidden />
-      {running ? "Running…" : "Run end-to-end pipeline"}
+      {running ? "Runningâ€¦" : "Run end-to-end pipeline"}
     </button>
   );
 
@@ -246,7 +208,7 @@ export function PipelineRunnerView() {
       {/* Failure surface with the failing stage indicated (R10.5). */}
       {error && (
         <ErrorMessage
-          module={error.stage ? `pipeline · ${error.stage}` : "pipeline"}
+          module={error.stage ? `pipeline Â· ${error.stage}` : "pipeline"}
           message={error.message}
           onRetry={() => void handleRun()}
         />
@@ -258,18 +220,18 @@ export function PipelineRunnerView() {
           <StageSummary label="Ingest" value={`${result.signals.length}`} unit="signals" />
           <StageSummary
             label="Score"
-            value={topRisk ? formatScore(topRisk.score) : "—"}
-            unit={topRisk ? `${topRisk.target} · ${topRisk.band}` : "no scores"}
+            value={topRisk ? formatScore(topRisk.score) : "â€”"}
+            unit={topRisk ? `${topRisk.target} Â· ${topRisk.band}` : "no scores"}
           />
           <StageSummary
             label="Simulate"
-            value={impactSummary ? `${Object.keys(impactSummary).length}` : "—"}
+            value={impactSummary ? `${Object.keys(impactSummary).length}` : "â€”"}
             unit={impactSummary ? "end-state metrics" : "no scenario"}
           />
           <StageSummary
             label="Recommend"
-            value={topRec ? formatScore(topRec.recommendation_score) : "—"}
-            unit={topRec ? `${topRec.supplier_country} · ${topRec.crude_grade}` : "no options"}
+            value={topRec ? formatScore(topRec.recommendation_score) : "â€”"}
+            unit={topRec ? `${topRec.supplier_country} Â· ${topRec.crude_grade}` : "no options"}
           />
         </div>
       )}
@@ -286,7 +248,7 @@ export function PipelineRunnerView() {
               >
                 <span className="min-w-0 truncate text-sm text-slate-600">{key}</span>
                 <span className="whitespace-nowrap font-mono text-sm text-slate-900">
-                  {Number.isFinite(value) ? value.toFixed(2) : "—"}
+                  {Number.isFinite(value) ? value.toFixed(2) : "â€”"}
                 </span>
               </li>
             ))}
@@ -300,7 +262,7 @@ export function PipelineRunnerView() {
           <div className="mb-3 flex items-center gap-2">
             <Link2 className="h-4 w-4 text-accent" aria-hidden />
             <h3 className="text-sm font-semibold text-slate-900">
-              Linked actions — high-band corridors
+              Linked actions â€” high-band corridors
             </h3>
           </div>
           {linkedActions.length === 0 ? (
@@ -330,14 +292,14 @@ export function PipelineRunnerView() {
                       <ArrowRight className="h-3 w-3 text-slate-400" aria-hidden />
                       Scenario:{" "}
                       <code className="font-mono text-slate-700">
-                        {action.recommended_scenario_id ?? "—"}
+                        {action.recommended_scenario_id ?? "â€”"}
                       </code>
                     </span>
                     <span className="flex items-center gap-1.5">
                       <ArrowRight className="h-3 w-3 text-slate-400" aria-hidden />
                       Procurement:{" "}
                       <code className="font-mono text-slate-700">
-                        {action.recommended_option_id ?? "—"}
+                        {action.recommended_option_id ?? "â€”"}
                       </code>
                     </span>
                   </div>
@@ -351,7 +313,6 @@ export function PipelineRunnerView() {
   );
 }
 
-/** A compact stage-result stat (value + unit) shown after a successful run. */
 function StageSummary({
   label,
   value,

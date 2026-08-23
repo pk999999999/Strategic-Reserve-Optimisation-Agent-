@@ -1,34 +1,3 @@
-"""Deterministic LLM-provider fallback for signal extraction.
-
-``DeterministicExtractor`` implements the :class:`~app.providers.base.LLMProvider`
-protocol without any network call or model. It is the guaranteed final fallback
-in the extractor chain (Groq -> Gemini -> deterministic), so the pipeline always
-completes offline and reproducibly during a live demo (design: "Deterministic
-core, probabilistic edges"; Requirement 2.3).
-
-Given a piece of signal ``text`` and the list of ``known_targets`` the system
-recognizes, the extractor:
-
-- scans the text (case-insensitively) for any known corridor/country name and,
-  when one is found, sets ``target``/``target_type`` and marks the result
-  ``classified=True`` (Requirement 2.1);
-- when no known target is found, returns an *unclassified* result
-  (``target=None``, ``classified=False``) so the scoring engine can exclude it
-  (Requirement 2.2);
-- always infers a ``risk_category`` from keyword rules and derives a
-  ``severity`` in the inclusive range [0, 100] from a deterministic
-  keyword-intensity heuristic (Requirement 2.1, design Property 3).
-
-The traceability fields ``signal_id``, ``source``, and ``timestamp`` are *not*
-known from ``text`` alone; the protocol only receives ``text`` and
-``known_targets``. This extractor therefore fills them with neutral placeholders
-and the calling ``LLM_Extractor`` service (task 8.1) attaches the originating
-signal's real ``signal_id``/``source``/``timestamp`` for evidence traceability
-(Requirement 2.4).
-
-Requirements: 2.1, 2.2, 2.3
-"""
-
 from __future__ import annotations
 
 import json
@@ -41,16 +10,8 @@ from app.models import ExtractedSignal, TargetType
 
 __all__ = ["DeterministicExtractor", "GroqProvider", "GeminiProvider"]
 
-# Placeholder timestamp used when the extractor has no originating signal. The
-# calling service overwrites this (and ``source``/``signal_id``) with the real
-# signal's traceability fields (Requirement 2.4). A fixed epoch keeps the
-# extractor's output fully deterministic.
 _PLACEHOLDER_TIMESTAMP = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
-# Corridor names are the only "corridor" targets in the system; everything else
-# in ``known_targets`` is treated as a supplier country. Matching is
-# case-insensitive. Kept here (rather than imported from the data files) so the
-# extractor stays a self-contained, dependency-light fallback.
 _CORRIDOR_NAMES = frozenset(
     {
         "strait of hormuz",
@@ -59,8 +20,6 @@ _CORRIDOR_NAMES = frozenset(
     }
 )
 
-# Risk-category keyword rules, checked in priority order. The first family with
-# a keyword present in the text wins; if none match the category is "general".
 _CATEGORY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sanctions", ("sanction", "price-cap", "price cap", "designation", "embargo", "ofac")),
     (
@@ -102,12 +61,8 @@ _CATEGORY_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
 )
 
-# Deterministic severity heuristic. Each keyword present in the text nudges the
-# severity up (escalatory) or down (de-escalatory/easing) from a neutral base.
-# The final value is clamped to [0, 100] so Property 3 holds for all inputs.
 _BASE_SEVERITY: float = 20.0
 _SEVERITY_KEYWORDS: dict[str, float] = {
-    # high-intensity escalation
     "shutdown": 35.0,
     "blockade": 35.0,
     "closure": 30.0,
@@ -122,7 +77,6 @@ _SEVERITY_KEYWORDS: dict[str, float] = {
     "escalate": 20.0,
     "escalation": 20.0,
     "tension": 18.0,
-    # medium-intensity friction
     "reroute": 15.0,
     "rerouting": 15.0,
     "diversion": 15.0,
@@ -133,7 +87,6 @@ _SEVERITY_KEYWORDS: dict[str, float] = {
     "premium": 8.0,
     "backlog": 10.0,
     "squeez": 12.0,
-    # de-escalation / easing (negative contributions)
     "unaffected": -15.0,
     "reassure": -12.0,
     "eases": -10.0,
@@ -146,40 +99,21 @@ _SEVERITY_KEYWORDS: dict[str, float] = {
 
 
 def _clamp(value: float, low: float, high: float) -> float:
-    """Clamp ``value`` into the inclusive ``[low, high]`` range."""
     return max(low, min(high, value))
 
 
 class DeterministicExtractor:
-    """Rules-based, zero-network implementation of ``LLMProvider``.
-
-    Fully deterministic: the same ``text`` and ``known_targets`` always yield the
-    same ``ExtractedSignal``. This makes the offline demo reproducible and the
-    behavior unit- and property-testable (design Property 3).
-    """
-
     def __init__(
         self,
         *,
         corridor_names: Optional[Iterable[str]] = None,
         base_severity: float = _BASE_SEVERITY,
     ) -> None:
-        # Normalize corridor names to lowercase for case-insensitive typing.
         names = _CORRIDOR_NAMES if corridor_names is None else corridor_names
         self._corridor_names = frozenset(n.strip().lower() for n in names)
         self._base_severity = base_severity
 
-    # -- LLMProvider protocol -------------------------------------------------
-
     def extract(self, text: str, known_targets: List[str]) -> ExtractedSignal:
-        """Extract a structured ``ExtractedSignal`` from ``text``.
-
-        Scans ``text`` for any name in ``known_targets`` (case-insensitive
-        substring match). When a target is found the result is classified and
-        carries the matched target and its inferred type; otherwise it is
-        unclassified (``target=None``). ``risk_category`` and a bounded
-        ``severity`` are always produced.
-        """
         safe_text = text or ""
         target = self._match_target(safe_text, known_targets)
         risk_category = self._infer_category(safe_text)
@@ -208,17 +142,9 @@ class DeterministicExtractor:
             classified=True,
         )
 
-    # -- internal helpers -----------------------------------------------------
-
     def _match_target(
         self, text: str, known_targets: List[str]
     ) -> Optional[str]:
-        """Return the known target mentioned earliest in ``text``, else ``None``.
-
-        Matching is a case-insensitive substring test. Ties (same earliest
-        index) are broken by the order of ``known_targets`` so the result is
-        deterministic.
-        """
         lowered = text.lower()
         best_target: Optional[str] = None
         best_index: Optional[int] = None
@@ -234,11 +160,9 @@ class DeterministicExtractor:
         return best_target
 
     def _target_type(self, target: str) -> TargetType:
-        """Classify a matched target as a corridor or a supplier country."""
         return "corridor" if target.strip().lower() in self._corridor_names else "country"
 
     def _infer_category(self, text: str) -> str:
-        """Infer a ``risk_category`` from keyword rules; default ``"general"``."""
         lowered = text.lower()
         for category, keywords in _CATEGORY_RULES:
             if any(keyword in lowered for keyword in keywords):
@@ -246,7 +170,6 @@ class DeterministicExtractor:
         return "general"
 
     def _derive_severity(self, text: str) -> float:
-        """Derive a bounded [0, 100] severity from keyword intensity."""
         lowered = text.lower()
         severity = self._base_severity
         for keyword, weight in _SEVERITY_KEYWORDS.items():
@@ -255,12 +178,6 @@ class DeterministicExtractor:
         return _clamp(severity, 0.0, 100.0)
 
 
-# ---------------------------------------------------------------------------
-# Live LLM providers (Groq primary, Gemini secondary)
-# ---------------------------------------------------------------------------
-
-# Endpoints for the free-tier chat APIs. Groq is OpenAI-compatible; Gemini uses
-# Google's generateContent shape. Both are overridable for testing.
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 _GEMINI_URL_TEMPLATE = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -269,7 +186,6 @@ _GEMINI_URL_TEMPLATE = (
 _DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 _DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
 
-# Instruction sent to the model: extract a small, strictly-typed JSON object.
 _EXTRACTION_INSTRUCTION = (
     "You extract structured supply-chain risk data from a news snippet. "
     "Respond with ONLY a JSON object (no prose, no markdown) with exactly these "
@@ -280,7 +196,6 @@ _EXTRACTION_INSTRUCTION = (
 
 
 def _build_prompt(text: str, known_targets: List[str]) -> str:
-    """Build the extraction prompt shared by both live providers."""
     targets = ", ".join(known_targets) if known_targets else "(none)"
     return (
         f"{_EXTRACTION_INSTRUCTION}\n"
@@ -290,15 +205,9 @@ def _build_prompt(text: str, known_targets: List[str]) -> str:
 
 
 def _parse_extraction_json(content: str) -> dict:
-    """Parse the model's textual response into a dict, tolerating fences/prose.
-
-    Raises:
-        LLMError: If no JSON object can be recovered from ``content``.
-    """
     if not content:
         raise LLMError("LLM returned an empty response")
     stripped = content.strip()
-    # Strip common markdown code fences (```json ... ```).
     if stripped.startswith("```"):
         stripped = re.sub(r"^```[a-zA-Z]*\s*", "", stripped)
         stripped = re.sub(r"\s*```$", "", stripped)
@@ -306,7 +215,6 @@ def _parse_extraction_json(content: str) -> dict:
         return json.loads(stripped)
     except json.JSONDecodeError:
         pass
-    # Fall back to the first {...} block found anywhere in the text.
     match = re.search(r"\{.*\}", stripped, re.DOTALL)
     if match:
         try:
@@ -319,22 +227,12 @@ def _parse_extraction_json(content: str) -> dict:
 def _to_extracted_signal(
     data: dict, known_targets: List[str]
 ) -> ExtractedSignal:
-    """Convert a parsed extraction dict into a validated ``ExtractedSignal``.
-
-    Traceability fields are left as neutral placeholders; the ``LLM_Extractor``
-    service attaches the originating signal's real id/source/timestamp (R2.4).
-
-    Raises:
-        LLMError: If the payload is unusable (e.g. severity is not numeric).
-    """
     if not isinstance(data, dict):
         raise LLMError("LLM extraction payload was not a JSON object")
 
     raw_target = data.get("target")
     target: Optional[str] = None
     if isinstance(raw_target, str) and raw_target.strip():
-        # Only accept a target the system actually knows (case-insensitive),
-        # normalizing to the canonical known-target spelling.
         lowered = raw_target.strip().lower()
         for candidate in known_targets:
             if candidate.lower() == lowered:
@@ -373,14 +271,6 @@ def _to_extracted_signal(
 
 
 class GroqProvider:
-    """Primary live ``LLMProvider`` backed by Groq's OpenAI-compatible API.
-
-    Chosen as primary for its low latency (design). On any failure -- missing API
-    key, HTTP error, timeout, or an unparseable response -- it raises
-    :class:`LLMError` so the ``LLM_Extractor`` falls back to the
-    :class:`DeterministicExtractor` (Requirement 2.3).
-    """
-
     def __init__(
         self,
         *,
@@ -397,7 +287,6 @@ class GroqProvider:
         self._client = client
 
     def extract(self, text: str, known_targets: List[str]) -> ExtractedSignal:
-        """Extract via Groq; raise :class:`LLMError` on any failure (R2.3)."""
         if not self._api_key:
             raise LLMError("Groq API key is not configured")
 
@@ -419,13 +308,12 @@ class GroqProvider:
             content = payload["choices"][0]["message"]["content"]
         except LLMError:
             raise
-        except Exception as exc:  # httpx errors, timeouts, KeyError, JSON errors
+        except Exception as exc:
             raise LLMError(f"Groq extraction failed: {exc}") from exc
 
         return _to_extracted_signal(_parse_extraction_json(content), known_targets)
 
     def _post(self, *, base_url: str, json_body: dict, headers: dict):
-        """Issue the POST request, reusing an injected client when provided."""
         import httpx
 
         if self._client is not None:
@@ -437,13 +325,6 @@ class GroqProvider:
 
 
 class GeminiProvider:
-    """Secondary live ``LLMProvider`` backed by Google's Gemini generateContent API.
-
-    Behaves identically to :class:`GroqProvider` from the caller's perspective:
-    any failure raises :class:`LLMError` so the extractor falls back to the
-    deterministic path (Requirement 2.3).
-    """
-
     def __init__(
         self,
         *,
@@ -460,7 +341,6 @@ class GeminiProvider:
         self._client = client
 
     def extract(self, text: str, known_targets: List[str]) -> ExtractedSignal:
-        """Extract via Gemini; raise :class:`LLMError` on any failure (R2.3)."""
         if not self._api_key:
             raise LLMError("Gemini API key is not configured")
 
@@ -486,7 +366,6 @@ class GeminiProvider:
         return _to_extracted_signal(_parse_extraction_json(content), known_targets)
 
     def _post(self, *, json_body: dict, params: dict):
-        """Issue the POST request, reusing an injected client when provided."""
         import httpx
 
         if self._client is not None:

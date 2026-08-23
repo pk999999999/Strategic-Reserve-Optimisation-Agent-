@@ -1,26 +1,16 @@
-// MapPanel — a react-leaflet map wrapper for the Risk Radar (Requirement 4.1).
-//
-// Draws shipping corridors as colored polylines (colored by risk band via the
-// shared `bandColor` helper) over free, OpenStreetMap-derived dark tiles
-// (CARTO dark basemap, no API key required). Optional route polylines are drawn
-// as thin dashed lines. Presentational: all geometry and colors come in as
-// props. Leaflet's CSS is imported here so the tiles and panes render correctly.
-
-import { MapContainer, TileLayer, Polyline, Tooltip } from "react-leaflet";
+﻿import { MapContainer, TileLayer, Polyline, Tooltip } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import type { RiskBand } from "../types";
 import { bandColor } from "../lib";
 
-/** A corridor drawn as a band-colored polyline. */
 export interface CorridorPolyline {
   id: string;
   name: string;
-  /** Ordered [lat, lng] coordinate pairs. */
+  
   positions: [number, number][];
   band: RiskBand;
 }
 
-/** An optional tanker route drawn as a thin dashed polyline. */
 export interface RoutePolyline {
   id: string;
   name: string;
@@ -31,16 +21,15 @@ export interface RoutePolyline {
 export interface MapPanelProps {
   corridors?: CorridorPolyline[];
   routes?: RoutePolyline[];
-  /** Initial map center [lat, lng]. Defaults to the Arabian Sea region. */
+  
   center?: [number, number];
-  /** Initial zoom level. */
+  
   zoom?: number;
-  /** CSS height for the map container. */
+  
   height?: number | string;
   className?: string;
 }
 
-// Center roughly over the Arabian Sea so India + the Gulf corridors are visible.
 const DEFAULT_CENTER: [number, number] = [18, 58];
 const DEFAULT_ZOOM = 4;
 
@@ -48,7 +37,6 @@ const TILE_URL = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
-/** Leaflet map wrapper rendering band-colored corridor polylines. */
 export function MapPanel({
   corridors = [],
   routes = [],
@@ -96,7 +84,7 @@ export function MapPanel({
             }}
           >
             <Tooltip sticky>
-              {corridor.name} — {corridor.band}
+              {corridor.name} â€” {corridor.band}
             </Tooltip>
           </Polyline>
         ))}

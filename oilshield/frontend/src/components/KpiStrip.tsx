@@ -1,12 +1,4 @@
-// KpiStrip — a hero row of elevated glass stat cards at the top of the command
-// center. Self-contained and presentation-only: it fetches banded risk scores
-// (`GET /risk/scores`) once on mount and derives a few headline KPIs from them.
-//
-// It never breaks the page: while loading it shows a shimmer skeleton row, and
-// if the fetch fails it silently renders nothing (the dashboard below is
-// unaffected). Data/logic are untouched — this only visualizes existing scores.
-
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -19,14 +11,12 @@ import { getRiskScores } from "../api";
 import { bandLabel, formatScore } from "../lib";
 import type { RiskBand, RiskScore } from "../types";
 
-/** Band buckets: low 0–33, elevated 34–66, high 67–100. */
 function bandFromScore(score: number): RiskBand {
   if (score >= 67) return "high";
   if (score >= 34) return "elevated";
   return "low";
 }
 
-/** Visual treatment (numeric color, thin top accent bar) per band. */
 const BAND_STYLE: Record<RiskBand, { num: string; bar: string }> = {
   low: {
     num: "text-emerald-600",
@@ -42,7 +32,6 @@ const BAND_STYLE: Record<RiskBand, { num: string; bar: string }> = {
   },
 };
 
-/** Neutral (non-band) treatment for informational counts. */
 const NEUTRAL_STYLE = {
   num: "text-sky-600",
   bar: "bg-sky-500",
@@ -56,7 +45,6 @@ interface Kpi {
   style: { num: string; bar: string };
 }
 
-/** Derive the headline KPIs from the ranked risk scores. */
 function deriveKpis(scores: RiskScore[]): Kpi[] {
   const corridors = scores.filter((s) => s.target_type === "corridor");
   const topCorridor = corridors.reduce<RiskScore | null>(
@@ -70,8 +58,8 @@ function deriveKpis(scores: RiskScore[]): Kpi[] {
   return [
     {
       label: "Highest corridor risk",
-      value: topCorridor ? formatScore(topCorridor.score) : "—",
-      sub: topCorridor ? `${topCorridor.target} · ${bandLabel(topCorridor.band)}` : "no corridors",
+      value: topCorridor ? formatScore(topCorridor.score) : "â€”",
+      sub: topCorridor ? `${topCorridor.target} Â· ${bandLabel(topCorridor.band)}` : "no corridors",
       icon: Flame,
       style: BAND_STYLE[topCorridor ? topCorridor.band : "low"],
     },
@@ -104,7 +92,6 @@ const container = {
   show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] } },
 };
 
-/** A single KPI column inside the shared strip (no per-card box). */
 function StatColumn({ kpi }: { kpi: Kpi }) {
   const Icon = kpi.icon;
   return (
@@ -127,7 +114,6 @@ function StatColumn({ kpi }: { kpi: Kpi }) {
   );
 }
 
-/** A single shimmer column matching the KPI column layout. */
 function SkeletonColumn() {
   return (
     <div className="p-5">
@@ -140,7 +126,6 @@ function SkeletonColumn() {
   );
 }
 
-/** The KPI hero strip. Renders nothing on error so it can never break the page. */
 export function KpiStrip({ className }: { className?: string }) {
   const [scores, setScores] = useState<RiskScore[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -163,10 +148,8 @@ export function KpiStrip({ className }: { className?: string }) {
     };
   }, []);
 
-  // Silent fallback: hide the strip entirely if scores could not be loaded.
   if (failed) return null;
 
-  // One clean grouped strip: a single card with columns divided by light rules.
   const strip =
     "grid grid-cols-2 divide-x divide-y divide-slate-200 sm:divide-y-0 md:grid-cols-4";
   const shell = `overflow-hidden rounded-lg border border-slate-200 bg-white shadow-panel ${className ?? ""}`;

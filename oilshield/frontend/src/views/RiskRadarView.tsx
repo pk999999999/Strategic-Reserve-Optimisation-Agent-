@@ -1,21 +1,4 @@
-// Risk Radar View — the live risk module (Requirements 3.5, 4.1, 4.2, 4.3, 4.4).
-//
-// Fetches banded, ranked risk scores from `/risk/scores`, draws each known
-// shipping corridor as a band-colored Leaflet polyline (R4.1), lists corridors
-// and supplier countries ranked highest-to-lowest with a status badge and score
-// (R4.2), and lets the viewer open any target to see the contributing signals —
-// each with its source and timestamp (R4.3) — via `/risk/{target}/signals`.
-//
-// A Refresh control re-runs ingestion (`/signals/refresh`) and re-fetches scores
-// so bands update on new signals (R3.5). Data provenance (live vs simulated) is
-// surfaced through the shared ProvenanceBanner from `data_source_modes` (R4.4).
-//
-// Self-contained: all data fetching lives here via useState/useEffect. The map
-// needs concrete geometry, which the risk API does not carry, so corridor
-// polylines are defined statically below (coordinates mirror
-// `backend/app/data/corridors.json`) and colored per their live RiskScore band.
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, Radar } from "lucide-react";
 import {
   getRiskScores,
@@ -34,12 +17,6 @@ import {
 import { formatDateTime, bandColor } from "../lib";
 import type { RiskScore, Signal } from "../types";
 
-/**
- * Static corridor geometry keyed by the corridor's display name (which matches
- * `RiskScore.target` for corridor targets). Coordinates mirror
- * `backend/app/data/corridors.json`. The band is supplied at render time from
- * the live RiskScore so the polyline color always reflects current risk (R4.1).
- */
 const CORRIDOR_GEOMETRY: Record<string, [number, number][]> = {
   "Strait of Hormuz": [
     [26.9667, 56.5333],
@@ -67,12 +44,10 @@ const CORRIDOR_GEOMETRY: Record<string, [number, number][]> = {
   ],
 };
 
-/** Sort risk scores highest-to-lowest by score (R4.2). */
 function rankByScore(scores: RiskScore[]): RiskScore[] {
   return [...scores].sort((a, b) => b.score - a.score);
 }
 
-/** Build band-colored corridor polylines for every corridor score with geometry. */
 function toCorridorPolylines(scores: RiskScore[]): CorridorPolyline[] {
   return scores
     .filter((s) => s.target_type === "corridor" && CORRIDOR_GEOMETRY[s.target])
@@ -84,7 +59,6 @@ function toCorridorPolylines(scores: RiskScore[]): CorridorPolyline[] {
     }));
 }
 
-/** State for the per-target contributing-signals detail drawer. */
 interface DetailState {
   target: string;
   loading: boolean;
@@ -92,7 +66,6 @@ interface DetailState {
   error: string | null;
 }
 
-/** The Live Risk Radar module: map + ranked list + detail drawer + provenance. */
 export function RiskRadarView() {
   const [scores, setScores] = useState<RiskScore[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,8 +73,7 @@ export function RiskRadarView() {
   const [refreshing, setRefreshing] = useState(false);
   const [detail, setDetail] = useState<DetailState | null>(null);
 
-  /** Fetch banded, ranked risk scores. */
-  const loadScores = useCallback(async () => {
+const loadScores = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -120,8 +92,7 @@ export function RiskRadarView() {
     void loadScores();
   }, [loadScores]);
 
-  /** Re-run ingestion then re-fetch scores so bands update on new signals (R3.5). */
-  const handleRefresh = useCallback(async () => {
+const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     setError(null);
     try {
@@ -136,8 +107,7 @@ export function RiskRadarView() {
     }
   }, [loadScores]);
 
-  /** Open a target's detail drawer and fetch its contributing signals (R4.3). */
-  const handleSelectTarget = useCallback(async (target: string) => {
+const handleSelectTarget = useCallback(async (target: string) => {
     setDetail({ target, loading: true, signals: [], error: null });
     try {
       const res = await getTargetSignals(target);
@@ -163,7 +133,7 @@ export function RiskRadarView() {
         className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
         aria-hidden
       />
-      {refreshing ? "Refreshing…" : "Refresh"}
+      {refreshing ? "Refreshingâ€¦" : "Refresh"}
     </button>
   );
 
@@ -179,7 +149,7 @@ export function RiskRadarView() {
       bodyClassName="space-y-4"
     >
       {loading ? (
-        <LoadingIndicator label="Scoring corridors…" fullHeight />
+        <LoadingIndicator label="Scoring corridorsâ€¦" fullHeight />
       ) : error ? (
         <ErrorMessage module="risk" message={error} onRetry={() => void loadScores()} />
       ) : (
@@ -245,7 +215,7 @@ export function RiskRadarView() {
         <div className="border-t border-slate-100 pt-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-slate-900">
-              Contributing signals — {detail.target}
+              Contributing signals â€” {detail.target}
             </h3>
             <button
               type="button"
@@ -257,7 +227,7 @@ export function RiskRadarView() {
           </div>
 
           {detail.loading ? (
-            <LoadingIndicator label="Loading contributing signals…" />
+            <LoadingIndicator label="Loading contributing signalsâ€¦" />
           ) : detail.error ? (
             <ErrorMessage
               module="risk"
@@ -278,9 +248,9 @@ export function RiskRadarView() {
                   <p className="text-sm text-slate-700">{sig.text_summary}</p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
                     <span className="font-medium text-slate-600">{sig.source}</span>
-                    <span aria-hidden>•</span>
+                    <span aria-hidden>â€¢</span>
                     <time dateTime={sig.timestamp}>{formatDateTime(sig.timestamp)}</time>
-                    <span aria-hidden>•</span>
+                    <span aria-hidden>â€¢</span>
                     <span className="font-mono">severity {sig.raw_severity}</span>
                   </div>
                 </li>

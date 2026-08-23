@@ -1,6 +1,4 @@
-// Barrel export for shared presentation components.
-
-export { DashboardShell } from "./DashboardShell";
+﻿export { DashboardShell } from "./DashboardShell";
 export type { DashboardShellProps } from "./DashboardShell";
 
 export { Panel } from "./Panel";

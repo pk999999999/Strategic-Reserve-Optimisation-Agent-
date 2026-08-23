@@ -1,13 +1,4 @@
-// DashboardShell — the single dark-mode layout hosting all modules
-// (Requirements 10.1, 10.2, 10.4, 10.5, 4.4).
-//
-// Owns the top header (product name + tagline), the global Data_Source_Mode
-// provenance banner, a global loading/error surface, and named regions for the
-// three modules (Risk Radar, Scenario Simulator, Procurement) plus the Pipeline
-// runner. Module content is injected via props so the data-fetching views
-// (tasks 21-24) can slot in; placeholders render until then.
-
-import type { ReactNode } from "react";
+﻿import type { ReactNode } from "react";
 import { Gauge, Radar, Ship, SlidersHorizontal, Workflow } from "lucide-react";
 import type { DataSourceMode } from "../types";
 import { Panel } from "./Panel";
@@ -16,24 +7,21 @@ import { LoadingIndicator } from "./LoadingIndicator";
 import { ErrorMessage } from "./ErrorMessage";
 
 export interface DashboardShellProps {
-  /** Overall data provenance for the global banner (R4.4). */
+  
   dataSourceMode?: DataSourceMode;
-  /** Optional per-source provenance breakdown. */
+  
   dataSourceModes?: Record<string, string>;
 
-  /** Optional hero content (e.g. KPI strip) rendered above the module stack. */
-  overview?: ReactNode;
+overview?: ReactNode;
 
-  /** Module region content; placeholders render when omitted. */
-  riskRadar?: ReactNode;
+riskRadar?: ReactNode;
   scenarioSimulator?: ReactNode;
   procurement?: ReactNode;
   pipeline?: ReactNode;
 
-  /** Global loading surface (e.g. initial bootstrap). */
-  globalLoading?: boolean;
+globalLoading?: boolean;
   globalLoadingLabel?: string;
-  /** Global error surface, shown above the module grid when present. */
+  
   globalError?: { module: string; message: string } | null;
   onRetryGlobal?: () => void;
 }
@@ -46,7 +34,6 @@ function Placeholder({ label }: { label: string }) {
   );
 }
 
-/** The light command-center chrome and module layout. */
 export function DashboardShell({
   dataSourceMode,
   dataSourceModes,
@@ -56,7 +43,7 @@ export function DashboardShell({
   procurement,
   pipeline,
   globalLoading = false,
-  globalLoadingLabel = "Bringing the command center online…",
+  globalLoadingLabel = "Bringing the command center onlineâ€¦",
   globalError = null,
   onRetryGlobal,
 }: DashboardShellProps) {
@@ -111,7 +98,7 @@ export function DashboardShell({
               plus its own loading / module-scoped error surfaces and fetches
               independently (R10.4, R10.5). So a provided region is rendered
               directly here, and the wrapped placeholder Panel is only used as the
-              empty-state fallback — avoiding a redundant double-Panel header.
+              empty-state fallback â€” avoiding a redundant double-Panel header.
 
               Layout: the dense modules each own a full-width row so their internal
               splits (map + ranked list, assumption controls + chart, ranked cards)

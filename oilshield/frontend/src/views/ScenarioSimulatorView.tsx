@@ -1,24 +1,4 @@
-// Scenario Simulator View — the Disruption Scenario Simulator module
-// (Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 6.2, 6.6, 7.1, 7.2, 7.3).
-//
-// On mount it lists predefined scenarios (`GET /scenarios`) and lets the viewer
-// pick one (R5.1). The assumptions panel renders each assumption: adjustable
-// ones become number inputs + range sliders bounded with min/max/step to the
-// assumption's [min_value, max_value] so only valid values can be entered
-// client-side (R5.3, R5.4), while non-adjustable assumptions are shown read-only
-// (R5.2). A "Run" action posts the overrides (`POST /scenarios/{id}/run`),
-// draws a Recharts timeline of projected values across the scenario duration
-// (R6.6), and displays the exact assumptions the backend used (R6.2). If the
-// backend rejects an out-of-range value it is surfaced inline (R5.5).
-//
-// Save serializes the configured scenario (`POST /scenarios/save`) and shows the
-// returned id (R7.1). Load takes an id, fetches the saved scenario
-// (`GET /scenarios/saved/{id}`), and repopulates the assumption values (R7.2);
-// a load failure is rendered inline (R7.3).
-//
-// Self-contained: all data fetching and local state live here.
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -40,17 +20,14 @@ import {
 import { Panel, LoadingIndicator, ErrorMessage } from "../components";
 import type { ImpactResult, Scenario, ScenarioAssumption } from "../types";
 
-/** Overrides keyed by assumption `key` -> numeric value. */
 type Overrides = Record<string, number>;
 
-/** A projected metric line drawn on the timeline (R6.6). */
 interface MetricLine {
   key: keyof ImpactPointMetrics;
   label: string;
   color: string;
 }
 
-/** The numeric metric fields carried by each ImpactPoint. */
 interface ImpactPointMetrics {
   refinery_run_rate_pct: number;
   fuel_price_index: number;
@@ -65,11 +42,6 @@ const METRIC_LINES: MetricLine[] = [
   { key: "gdp_index", label: "GDP index", color: "#8B5CF6" },
 ];
 
-/**
- * Derive a sensible slider/number step from an assumption's range so users can
- * move across the whole [min, max] in reasonable increments. Uses integer steps
- * for wide ranges and finer decimal steps for narrow ones.
- */
 function stepForRange(min: number, max: number): number {
   const span = Math.abs(max - min);
   if (span === 0) return 1;
@@ -79,13 +51,11 @@ function stepForRange(min: number, max: number): number {
   return 0.01;
 }
 
-/** Clamp a value into the assumption's valid range (defence for client input). */
 function clamp(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min;
   return Math.min(max, Math.max(min, value));
 }
 
-/** Build the initial override map from a scenario's assumption defaults. */
 function initialOverrides(scenario: Scenario): Overrides {
   const out: Overrides = {};
   for (const a of scenario.assumptions) {
@@ -94,11 +64,6 @@ function initialOverrides(scenario: Scenario): Overrides {
   return out;
 }
 
-/**
- * Keep only the overrides whose assumption is adjustable on the given scenario.
- * The backend rejects overrides for non-adjustable assumptions (R5.5), so
- * non-adjustable keys must be stripped before Run/Save.
- */
 function adjustableOverrides(
   scenario: Scenario | null,
   overrides: Overrides,
@@ -113,7 +78,6 @@ function adjustableOverrides(
   return out;
 }
 
-/** The Disruption Scenario Simulator module. */
 export function ScenarioSimulatorView() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,14 +104,12 @@ export function ScenarioSimulatorView() {
     [scenarios, selectedId],
   );
 
-  /** Fetch predefined scenarios (R5.1). */
-  const loadScenarios = useCallback(async () => {
+const loadScenarios = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
       const res = await getScenarios();
       setScenarios(res.scenarios);
-      // Auto-select the first scenario so the panel is populated.
       if (res.scenarios.length > 0) {
         const first = res.scenarios[0];
         setSelectedId(first.id);
@@ -166,8 +128,7 @@ export function ScenarioSimulatorView() {
     void loadScenarios();
   }, [loadScenarios]);
 
-  /** Select a scenario and reset its assumption overrides + prior results. */
-  const handleSelect = useCallback(
+const handleSelect = useCallback(
     (id: string) => {
       setSelectedId(id);
       setImpact(null);
@@ -181,8 +142,7 @@ export function ScenarioSimulatorView() {
     [scenarios],
   );
 
-  /** Update one adjustable assumption, clamped to its valid range (R5.4). */
-  const handleAssumptionChange = useCallback(
+const handleAssumptionChange = useCallback(
     (assumption: ScenarioAssumption, raw: number) => {
       const next = clamp(raw, assumption.min_value, assumption.max_value);
       setOverrides((prev) => ({ ...prev, [assumption.key]: next }));
@@ -190,20 +150,16 @@ export function ScenarioSimulatorView() {
     [],
   );
 
-  /** Run the scenario with the current overrides (R6.6, R6.2, R5.5). */
-  const handleRun = useCallback(async () => {
+const handleRun = useCallback(async () => {
     if (!selectedId) return;
     setRunning(true);
     setRunError(null);
     try {
-      // Only adjustable assumptions may be overridden; the backend rejects
-      // overrides for non-adjustable ones (R5.5).
       const payload = adjustableOverrides(selected, overrides);
       const res = await runScenario(selectedId, payload);
       setImpact(res.impact);
       setAssumptionsUsed(res.assumptions_used);
     } catch (err) {
-      // Backend range validation errors (R5.5) arrive here as ApiError.
       const message =
         err instanceof ApiError ? err.message : "Failed to run scenario.";
       setRunError(message);
@@ -212,14 +168,12 @@ export function ScenarioSimulatorView() {
     }
   }, [selectedId, overrides, selected]);
 
-  /** Save the configured scenario and surface the returned id (R7.1). */
-  const handleSave = useCallback(async () => {
+const handleSave = useCallback(async () => {
     if (!selectedId) return;
     setSaving(true);
     setSaveError(null);
     setSavedId(null);
     try {
-      // Only send overrides for adjustable assumptions (R5.5).
       const payload = adjustableOverrides(selected, overrides);
       const res = await saveScenario(selectedId, payload);
       setSavedId(res.id);
@@ -232,8 +186,7 @@ export function ScenarioSimulatorView() {
     }
   }, [selectedId, overrides, selected]);
 
-  /** Load a saved scenario by id and repopulate assumption values (R7.2, R7.3). */
-  const handleLoad = useCallback(async () => {
+const handleLoad = useCallback(async () => {
     const id = loadId.trim();
     if (!id) return;
     setLoadingSaved(true);
@@ -241,8 +194,6 @@ export function ScenarioSimulatorView() {
     try {
       const res = await getSavedScenario(id);
       const scenario = res.scenario;
-      // Merge the loaded scenario into the picker if not already present, then
-      // select it and repopulate assumption values from the saved definition.
       setScenarios((prev) =>
         prev.some((s) => s.id === scenario.id) ? prev : [...prev, scenario],
       );
@@ -272,7 +223,7 @@ export function ScenarioSimulatorView() {
       bodyClassName="space-y-4"
     >
       {loading ? (
-        <LoadingIndicator label="Loading scenarios…" fullHeight />
+        <LoadingIndicator label="Loading scenariosâ€¦" fullHeight />
       ) : loadError ? (
         <ErrorMessage
           module="scenario"
@@ -394,7 +345,7 @@ export function ScenarioSimulatorView() {
                   className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white transition hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Play className="h-4 w-4" aria-hidden />
-                  {running ? "Running…" : "Run scenario"}
+                  {running ? "Runningâ€¦" : "Run scenario"}
                 </button>
 
                 {/* Save / Load controls (R7.1, R7.2, R7.3). */}
@@ -407,7 +358,7 @@ export function ScenarioSimulatorView() {
                       className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Save className="h-3.5 w-3.5" aria-hidden />
-                      {saving ? "Saving…" : "Save scenario"}
+                      {saving ? "Savingâ€¦" : "Save scenario"}
                     </button>
                     {savedId && (
                       <p className="mt-1.5 text-xs text-slate-500">
@@ -447,7 +398,7 @@ export function ScenarioSimulatorView() {
                         className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <FolderOpen className="h-3.5 w-3.5" aria-hidden />
-                        {loadingSaved ? "Loading…" : "Load"}
+                        {loadingSaved ? "Loadingâ€¦" : "Load"}
                       </button>
                     </div>
                     {savedLoadError && (
@@ -472,7 +423,7 @@ export function ScenarioSimulatorView() {
             )}
 
             {running ? (
-              <LoadingIndicator label="Projecting impact…" fullHeight />
+              <LoadingIndicator label="Projecting impactâ€¦" fullHeight />
             ) : impact ? (
               <>
                 {/* Recharts timeline of projected values (R6.6). */}

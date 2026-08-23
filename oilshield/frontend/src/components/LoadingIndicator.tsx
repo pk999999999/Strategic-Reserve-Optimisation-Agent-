@@ -1,19 +1,15 @@
-// LoadingIndicator — small shared spinner used by module loading surfaces
-// (Requirement 10.4). Presentational only.
-
-import { Loader2 } from "lucide-react";
+﻿import { Loader2 } from "lucide-react";
 
 export interface LoadingIndicatorProps {
-  /** Optional label shown next to the spinner (e.g. "Scoring corridors…"). */
+  
   label?: string;
-  /** Center within the available space (fills its container). */
+  
   fullHeight?: boolean;
   className?: string;
 }
 
-/** An accessible spinner with an optional label. */
 export function LoadingIndicator({
-  label = "Loading…",
+  label = "Loadingâ€¦",
   fullHeight = false,
   className,
 }: LoadingIndicatorProps) {

@@ -1,41 +1,3 @@
-"""Scenario_Simulator service.
-
-The Scenario_Simulator is the deterministic heart of the "what-if" module. It
-does four things, each a pure function of its inputs so a judge can audit every
-number and reproduce it offline:
-
-1. **Catalog (R5.1, R5.2):** provides a fixed set of predefined disruption
-   scenarios -- a Strait of Hormuz partial closure, an OPEC+ production cut, and
-   a Red Sea shutdown -- each carrying its full :class:`ScenarioAssumption` list
-   with valid ranges and adjustable flags.
-2. **Assumption validation (R5.3-R5.5):** applies an edit to an adjustable
-   assumption only when the submitted value is within that assumption's
-   ``[min_value, max_value]`` range; otherwise it rejects the edit, keeps the
-   previous valid value, and reports the valid range via ``ValidationError``.
-3. **Impact cascade (R6.1-R6.4, R6.6):** turns a scenario's assumptions into a
-   per-day :class:`ImpactResult` timeline using the documented, non-negative
-   cascade constants in ``app/core/constants.py``. Monotonicity in closure and
-   the SPR floor hold *by construction* (see ``run``).
-4. **Save / restore (R7.1-R7.3):** serializes a configured scenario's name and
-   assumption values into a versioned :class:`SavedScenario` through an injected
-   :class:`ScenarioRepository`, and restores an identical scenario on load,
-   rejecting malformed or version-incompatible representations.
-
-Cascade (design "Scenario impact computation"), with every ``k_*`` constant
-non-negative so the documented properties hold::
-
-    supply_loss_fraction = clamp(
-        corridor_import_share * (corridor_closure_pct / 100)
-          + production_cut_kbd / TOTAL_IMPORT_KBD,
-        0, 1)
-    refinery_run_rate_pct(day) = clamp(100 - K_REF * supply_loss_fraction * 100, 0, 100)
-    fuel_price_index(day)      = 100 * (1 + K_PRICE * supply_loss_fraction)
-    spr_days_of_cover(day)     = max(0, spr_start_days - day * supply_loss_fraction / DRAWDOWN_DIVISOR)
-    gdp_index(day)             = 100 * (1 - K_GDP * supply_loss_fraction * (day / duration_days))
-
-Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 6.1, 6.2, 6.3, 6.4, 6.6, 7.1, 7.2, 7.3
-"""
-
 from __future__ import annotations
 
 import math
@@ -61,26 +23,18 @@ from app.providers.storage import CURRENT_SCENARIO_VERSION
 
 __all__ = ["ScenarioSimulator"]
 
-
-# Assumption keys used by the cascade. Centralized so the catalog builders and
-# the impact computation cannot drift apart.
 KEY_CLOSURE_PCT = "corridor_closure_pct"
 KEY_PRODUCTION_CUT = "production_cut_kbd"
 KEY_DURATION_DAYS = "duration_days"
 KEY_IMPORT_SHARE = "corridor_import_share"
 KEY_SPR_START = "spr_start_days"
 
-# Per-corridor import shares (drawn from app/data/corridors.json). Displayed but
-# typically non-adjustable, since they are structural facts about India's trade.
 _HORMUZ_IMPORT_SHARE = 0.62
 _RED_SEA_IMPORT_SHARE = 0.14
-
-# Default starting SPR days-of-cover (~9-10 days for an India-style buffer).
 _DEFAULT_SPR_START = 9.5
 
 
 def _clamp(value: float, low: float, high: float) -> float:
-    """Clamp ``value`` into the inclusive ``[low, high]`` range."""
     if value < low:
         return low
     if value > high:
@@ -89,7 +43,6 @@ def _clamp(value: float, low: float, high: float) -> float:
 
 
 def _is_real_number(value: object) -> bool:
-    """True when ``value`` is a finite int/float (booleans excluded)."""
     if isinstance(value, bool):
         return False
     if not isinstance(value, (int, float)):
@@ -98,42 +51,18 @@ def _is_real_number(value: object) -> bool:
 
 
 class ScenarioSimulator:
-    """Predefined scenarios, assumption validation, impact cascade, save/load.
-
-    The impact math is a pure, deterministic function of a scenario's
-    assumptions; only :meth:`save`/:meth:`load` touch external state, through an
-    injected :class:`ScenarioRepository` (defaulting to the JSON-file backend so
-    the offline demo works with zero setup).
-    """
-
     def __init__(self, repository: Optional[ScenarioRepository] = None) -> None:
-        """Create the simulator.
-
-        Args:
-            repository: Storage backend for saved scenarios. Defaults to
-                :class:`JsonFileScenarioRepository` so no database is required.
-        """
         self._repository: ScenarioRepository = (
             repository if repository is not None else JsonFileScenarioRepository()
         )
-        # Build the catalog once; every public accessor returns deep copies so
-        # callers can freely mutate their scenario without corrupting the catalog.
         self._catalog: Dict[str, Scenario] = {
             scenario.id: scenario for scenario in self._build_catalog()
         }
 
-    # -- Catalog (R5.1, R5.2) -------------------------------------------------
-
     def list_scenarios(self) -> List[Scenario]:
-        """Return all predefined scenarios (deep copies), in catalog order."""
         return [scenario.model_copy(deep=True) for scenario in self._catalog.values()]
 
     def get_scenario(self, scenario_id: str) -> Scenario:
-        """Return a deep copy of the predefined scenario with ``scenario_id``.
-
-        Raises:
-            ValidationError: If no predefined scenario has that id.
-        """
         scenario = self._catalog.get(scenario_id)
         if scenario is None:
             raise ValidationError(
@@ -142,32 +71,9 @@ class ScenarioSimulator:
             )
         return scenario.model_copy(deep=True)
 
-    # -- Assumption validation (R5.3, R5.4, R5.5) -----------------------------
-
     def apply_assumption(
         self, scenario: Scenario, key: str, value: float
     ) -> Scenario:
-        """Apply an edit to an adjustable assumption, validating the value.
-
-        On success returns a new :class:`Scenario` whose assumption ``key`` holds
-        the submitted ``value``. The input ``scenario`` is never mutated, so on
-        rejection the caller's previous valid value is retained (R5.5).
-
-        Args:
-            scenario: The scenario to edit (left unchanged).
-            key: The assumption ``key`` to update.
-            value: The submitted value.
-
-        Returns:
-            A new scenario with the applied value (R5.4).
-
-        Raises:
-            ValidationError: If the key is unknown, the assumption is not
-                adjustable, or the value is non-numeric or outside
-                ``[min_value, max_value]``. The error's ``message`` includes the
-                valid range, and ``valid_range``/``assumption_key`` attributes
-                expose it programmatically (R5.5).
-        """
         updated = scenario.model_copy(deep=True)
         target = next((a for a in updated.assumptions if a.key == key), None)
 
@@ -200,33 +106,15 @@ class ScenarioSimulator:
             err.assumption_key = key  # type: ignore[attr-defined]
             raise err
 
-        # In range -> commit on the copy only (R5.4).
         target.value = numeric
         return updated
 
-    # -- Impact cascade (R6.1-R6.4, R6.6) -------------------------------------
-
     def run(self, scenario: Scenario) -> ImpactResult:
-        """Compute the deterministic impact timeline for ``scenario``.
-
-        Builds exactly one :class:`ImpactPoint` per day over ``duration_days``
-        (R6.1, R6.6), records the assumptions used (R6.2), and summarizes
-        end-state deltas. Runs in O(duration_days) with duration bounded to 180,
-        so it completes far within the 5-second budget (R6.5).
-
-        Invariants that hold by construction:
-        - SPR days-of-cover is monotonic non-increasing in closure (R6.3):
-          ``supply_loss_fraction`` is non-decreasing in closure and enters the
-          SPR drawdown term with a non-negative coefficient.
-        - SPR days-of-cover is clamped at 0 (R6.4).
-        - Refinery run rate stays in [0, 100]; indices stay non-negative.
-        """
         share = self._value(scenario, KEY_IMPORT_SHARE, 0.0)
         closure_pct = self._value(scenario, KEY_CLOSURE_PCT, 0.0)
         production_cut = self._value(scenario, KEY_PRODUCTION_CUT, 0.0)
         spr_start = self._value(scenario, KEY_SPR_START, _DEFAULT_SPR_START)
 
-        # duration_days is an integer horizon of at least one day.
         duration_days = int(self._value(scenario, KEY_DURATION_DAYS, 1.0))
         if duration_days < 1:
             duration_days = 1
@@ -278,14 +166,7 @@ class ScenarioSimulator:
             summary=summary,
         )
 
-    # -- Save / restore (R7.1-R7.3) -------------------------------------------
-
     def save(self, scenario: Scenario) -> str:
-        """Serialize ``scenario`` (name + assumption values) and store it.
-
-        Returns:
-            The generated id of the stored :class:`SavedScenario` (R7.1).
-        """
         record = SavedScenario(
             version=CURRENT_SCENARIO_VERSION,
             name=scenario.name,
@@ -294,17 +175,6 @@ class ScenarioSimulator:
         return self._repository.save(record)
 
     def load(self, scenario_id: str) -> Scenario:
-        """Load a saved scenario and rebuild an identical :class:`Scenario`.
-
-        The restored scenario has the same ``name`` and assumption values that
-        were saved (round-trip, R7.2). When the saved name matches a predefined
-        scenario, its ``id`` and ``corridor`` are recovered too; otherwise a
-        fresh id is generated and the corridor is left blank.
-
-        Raises:
-            ScenarioLoadError: If the stored representation is missing, malformed,
-                or version-incompatible (R7.3). Propagated from the repository.
-        """
         saved: SavedScenario = self._repository.load(scenario_id)
 
         template = next(
@@ -320,27 +190,19 @@ class ScenarioSimulator:
             assumptions=[a.model_copy(deep=True) for a in saved.assumptions],
         )
 
-    # -- internal helpers -----------------------------------------------------
-
     @staticmethod
     def _value(scenario: Scenario, key: str, default: float) -> float:
-        """Return the current value of assumption ``key`` or ``default``."""
         for assumption in scenario.assumptions:
             if assumption.key == key:
                 return float(assumption.value)
         return default
 
     def _build_catalog(self) -> List[Scenario]:
-        """Construct the fixed predefined scenarios (R5.1)."""
         return [
             self._hormuz_partial_closure(),
             self._opec_production_cut(),
             self._red_sea_shutdown(),
         ]
-
-    # Each builder returns a fresh Scenario. Adjustable flags match the
-    # scenario's narrative: Hormuz/Red Sea drive closure percentage; OPEC+ drives
-    # the production cut. Structural inputs (import share) are non-adjustable.
 
     def _hormuz_partial_closure(self) -> Scenario:
         return Scenario(
